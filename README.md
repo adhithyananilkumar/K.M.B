@@ -2,7 +2,7 @@
 
 A Laravel-based web application.
 
-## Requirements
+# Requirements
 - PHP 8.1 
 - Composer 2.x
 - MySQL 8+ 
@@ -18,5 +18,4 @@ php artisan migrate
 
 
 # Run app
-php artisan serve   
-```
+php artisan serve
