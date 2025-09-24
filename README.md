@@ -1,4 +1,4 @@
-<h1>Kunjacha Missionary Bhavan - Ramapuram</h1>
+<h1>Kunjachan Missionary Bhavan - Ramapuram</h1>
 
 A Laravel-based web application.
 
