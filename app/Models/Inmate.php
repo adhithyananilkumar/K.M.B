@@ -4,11 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Inmate extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -16,15 +18,15 @@ class Inmate extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'registration_number',
-        'first_name', 'last_name',
-        'date_of_birth', 'gender', 'admission_date',
-    'institution_id', 'doctor_id', 'guardian_id', 'guardian_relation',
-        'guardian_first_name', 'guardian_last_name', 'guardian_email', 'guardian_phone', 'guardian_address',
-        'aadhaar_number', 'photo_path', 'aadhaar_card_path', 'ration_card_path', 'panchayath_letter_path', 'disability_card_path', 'doctor_certificate_path', 'vincent_depaul_card_path',
-    'notes',
-    'critical_alert',
-    'type', 'intake_history'
+        'admission_number','registration_number',
+        'first_name','last_name','date_of_birth','gender','admission_date','institution_id',
+        'admitted_by','verified_by','consent_signed_at','room_location_id',
+        'marital_status','blood_group','height','weight','identification_marks','religion','caste','nationality','address',
+        'father_name','mother_name','spouse_name','guardian_name',
+        'guardian_id','guardian_relation','guardian_first_name','guardian_last_name','guardian_email','guardian_phone','guardian_address',
+        'education_details','documents','notes','case_notes','health_info','critical_alert',
+        'aadhaar_number','photo_path','aadhaar_card_path','ration_card_path','panchayath_letter_path','disability_card_path','doctor_certificate_path','vincent_depaul_card_path',
+        'type','intake_history','created_by','updated_by'
     ];
 
     /**
@@ -35,11 +37,33 @@ class Inmate extends Model
     protected $casts = [
         'date_of_birth' => 'date',
         'admission_date' => 'date',
+        'consent_signed_at' => 'datetime',
+        'address' => 'array',
+        'education_details' => 'array',
+        'documents' => 'array',
+        'health_info' => 'array',
+        'height' => 'decimal:2',
+        'weight' => 'decimal:2',
     ];
 
     public function institution(): BelongsTo
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    public function admittedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'admitted_by');
+    }
+
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function roomLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'room_location_id');
     }
 
     public function doctor(): BelongsTo

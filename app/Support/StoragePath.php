@@ -28,6 +28,17 @@ class StoragePath
         return self::basePrefix()."/inmates/{$inmateId}/documents";
     }
 
+    // New: admission-number based directories
+    public static function inmatePhotoDirByAdmission(string $admissionNumber): string
+    {
+        return self::basePrefix()."/inmates/{$admissionNumber}/photos";
+    }
+
+    public static function inmateDocDirByAdmission(string $admissionNumber): string
+    {
+        return self::basePrefix()."/inmates/{$admissionNumber}/documents";
+    }
+
     public static function labReportDir(int|string $labTestId): string
     {
         return self::basePrefix()."/lab-tests/{$labTestId}/reports";

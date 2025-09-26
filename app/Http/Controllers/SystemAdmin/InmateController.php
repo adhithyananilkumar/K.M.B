@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Inmate;
 use App\Models\Institution;
 use App\Models\InmateDocument;
+use App\Models\User;
 use Illuminate\Http\Request;
+use App\Http\Requests\StoreInmateRequest;
+use App\Http\Requests\UpdateInmateRequest;
+use App\Services\AdmissionNumberGenerator;
 use Illuminate\Support\Facades\Storage;
 
 class InmateController extends Controller
@@ -38,48 +42,25 @@ class InmateController extends Controller
             'Mental Health Patient' => 'mental_health',
             'Rehabilitation Patient' => 'rehabilitation',
         ];
-        return view('system_admin.inmates.create', compact('institutions','inmateTypes'));
+        $staff = User::orderBy('name')->get(['id','name']);
+        return view('system_admin.inmates.create', compact('institutions','inmateTypes','staff'));
     }
 
-    public function store(Request $request){
-        $data = $request->validate([
-            'institution_id' => 'required|exists:institutions,id',
-            'registration_number' => 'nullable|string|max:100',
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'nullable|string|max:255',
-            'date_of_birth' => 'required|date',
-            'gender' => 'required|in:Male,Female,Other',
-            'admission_date' => 'required|date',
-            'notes' => 'nullable|string',
-            'critical_alert' => 'nullable|string|max:1000',
-            'guardian_relation' => 'nullable|string|max:100',
-            'guardian_first_name' => 'nullable|string|max:255',
-            'guardian_last_name' => 'nullable|string|max:255',
-            'guardian_email' => 'nullable|email|max:255',
-            'guardian_phone' => 'nullable|string|max:50',
-            'guardian_address' => 'nullable|string',
-            'aadhaar_number' => 'nullable|string|max:100',
-            'type' => 'nullable|string|max:50',
-            'intake_history' => 'nullable|string',
-            'mobility_status' => 'nullable|string|max:255',
-            'dietary_needs' => 'nullable|string|max:255',
-            'emergency_contact_details' => 'nullable|string',
-            'rehab_primary_issue' => 'nullable|string|max:255',
-            'rehab_program_phase' => 'nullable|string|max:255',
-            'rehab_goals' => 'nullable|string',
-            'mh_diagnosis' => 'nullable|string|max:255',
-            'mh_therapy_frequency' => 'nullable|string|max:255',
-            'mh_current_meds' => 'nullable|string',
-            'photo' => 'nullable|image|max:2048',
-            'aadhaar_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'ration_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'panchayath_letter' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'disability_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'doctor_certificate' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'vincent_depaul_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'doc_names.*' => 'nullable|string|max:255',
-            'doc_files.*' => 'nullable|file|max:8192',
-        ]);
+    public function store(StoreInmateRequest $request){
+        $data = $request->validated();
+
+        // If consent checkbox checked, set consent_signed_at
+        if ($request->boolean('consent_signed')) {
+            $data['consent_signed_at'] = now();
+        }
+        // Normalize health_info to JSON structure if user typed plain text
+        if (isset($data['health_info'])) {
+            if (is_string($data['health_info'])) {
+                $trim = trim($data['health_info']);
+                $decoded = json_decode($trim, true);
+                $data['health_info'] = json_last_error() === JSON_ERROR_NONE ? $decoded : ['notes' => $trim];
+            }
+        }
 
         $fileMap = [
             'photo' => 'photo_path',
@@ -99,18 +80,43 @@ class InmateController extends Controller
             }
         }
 
-        $inmate = Inmate::create($data);
+    // Admission number generation with retry on duplicate key
+        if (empty($data['admitted_by'])) { $data['admitted_by'] = auth()->id(); }
+        // derive age from DOB if provided
+        if (!empty($data['date_of_birth'])) {
+            try { $data['age'] = \Carbon\Carbon::parse($data['date_of_birth'])->age; } catch (\Throwable $e) {}
+        }
+        $inmate = null; $attempts = 0;
+        do {
+            $data['admission_number'] = AdmissionNumberGenerator::generate();
+            try {
+                $inmate = Inmate::create($data);
+            } catch (\Illuminate\Database\QueryException $qe) {
+                if (str_contains(strtolower($qe->getMessage()), 'unique') && $attempts < 3) {
+                    $attempts++; continue;
+                }
+                throw $qe;
+            }
+            break;
+        } while($attempts < 3);
 
         // Store core files into final directories with unique names
+        $docsMeta = [];
         foreach ($pendingFiles as $column => $file) {
             $dir = $column === 'photo_path'
-                ? \App\Support\StoragePath::inmatePhotoDir($inmate->id)
-                : \App\Support\StoragePath::inmateDocDir($inmate->id);
+                ? \App\Support\StoragePath::inmatePhotoDirByAdmission($inmate->admission_number)
+                : \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
             $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::putFileAs($dir, $file, $name);
+            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
             $inmate->{$column} = $path;
+            $docsMeta[] = [
+                'field' => $column,
+                'original' => $file->getClientOriginalName(),
+                'path' => $path,
+                'mime' => $file->getClientMimeType(),
+            ];
         }
-        if (!empty($pendingFiles)) { $inmate->save(); }
+        if (!empty($pendingFiles)) { $inmate->documents = array_values(array_merge($inmate->documents ?? [], $docsMeta)); $inmate->save(); }
 
         // optional initial location assignment
         if($request->filled('location_id')){
@@ -123,6 +129,8 @@ class InmateController extends Controller
                     'start_date' => now(),
                     'end_date' => null,
                 ]);
+                $inmate->room_location_id = $location->id;
+                $inmate->save();
             }
         }
 
@@ -159,16 +167,37 @@ class InmateController extends Controller
             foreach ($request->doc_names as $idx => $docName) {
                 if ($docName && isset($request->doc_files[$idx])) {
             $file = $request->doc_files[$idx];
-            $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
+            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
             $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::putFileAs($dir, $file, $name);
+            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
                     InmateDocument::create([
                         'inmate_id' => $inmate->id,
                         'document_name' => $docName,
                         'file_path' => $path,
                     ]);
+                    $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                        'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
+                    ]]));
+                    $inmate->save();
                 }
             }
+        }
+
+        // Store consent letter if provided (as extra document)
+        if ($request->hasFile('consent_letter')) {
+            $file = $request->file('consent_letter');
+            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
+            $name = \App\Support\StoragePath::uniqueName($file);
+            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
+            InmateDocument::create([
+                'inmate_id' => $inmate->id,
+                'document_name' => 'Consent Letter',
+                'file_path' => $path,
+            ]);
+            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                'field' => 'consent_letter', 'name' => 'Consent Letter', 'path' => $path, 'mime' => $file->getClientMimeType()
+            ]]));
+            $inmate->save();
         }
 
         return redirect()->route('system_admin.inmates.index')->with('success', 'Inmate created successfully.');
@@ -333,45 +362,8 @@ class InmateController extends Controller
         ]);
     }
 
-    public function update(Request $request, Inmate $inmate){
-        $data = $request->validate([
-            'institution_id' => 'required|exists:institutions,id',
-            'registration_number' => 'nullable|string|max:100',
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'nullable|string|max:255',
-            'date_of_birth' => 'required|date',
-            'gender' => 'required|in:Male,Female,Other',
-            'admission_date' => 'required|date',
-            'notes' => 'nullable|string',
-            'critical_alert' => 'nullable|string|max:1000',
-            'type' => 'nullable|in:child,elderly,mental_health,rehabilitation',
-            'guardian_relation' => 'nullable|string|max:100',
-            'guardian_first_name' => 'nullable|string|max:255',
-            'guardian_last_name' => 'nullable|string|max:255',
-            'guardian_email' => 'nullable|email|max:255',
-            'guardian_phone' => 'nullable|string|max:50',
-            'guardian_address' => 'nullable|string',
-            'aadhaar_number' => 'nullable|string|max:100',
-            'intake_history' => 'nullable|string',
-            'mobility_status' => 'nullable|string|max:255',
-            'dietary_needs' => 'nullable|string|max:255',
-            'emergency_contact_details' => 'nullable|string',
-            'rehab_primary_issue' => 'nullable|string|max:255',
-            'rehab_program_phase' => 'nullable|string|max:255',
-            'rehab_goals' => 'nullable|string',
-            'mh_diagnosis' => 'nullable|string|max:255',
-            'mh_therapy_frequency' => 'nullable|string|max:255',
-            'mh_current_meds' => 'nullable|string',
-            'photo' => 'nullable|image|max:2048',
-            'aadhaar_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'ration_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'panchayath_letter' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'disability_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'doctor_certificate' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'vincent_depaul_card' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:4096',
-            'doc_names.*' => 'nullable|string|max:255',
-            'doc_files.*' => 'nullable|file|max:8192',
-        ]);
+    public function update(UpdateInmateRequest $request, Inmate $inmate){
+        $data = $request->validated();
 
         $fileMap = [
             'photo' => 'photo_path',
@@ -389,14 +381,34 @@ class InmateController extends Controller
                 }
                 $file = $request->file($input);
                 $dir = $input === 'photo'
-                    ? \App\Support\StoragePath::inmatePhotoDir($inmate->id)
-                    : \App\Support\StoragePath::inmateDocDir($inmate->id);
+                    ? \App\Support\StoragePath::inmatePhotoDirByAdmission($inmate->admission_number)
+                    : \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
                 $name = \App\Support\StoragePath::uniqueName($file);
-                $data[$column] = \Storage::putFileAs($dir, $file, $name);
+                $data[$column] = \Storage::disk('public')->putFileAs($dir, $file, $name);
+                $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                    'field' => $column, 'original' => $file->getClientOriginalName(), 'path' => $data[$column], 'mime' => $file->getClientMimeType()
+                ]]));
             }
         }
 
         $oldInstitutionId = $inmate->institution_id;
+        // derive age if dob changed
+        if (!empty($data['date_of_birth'])) {
+            try { $data['age'] = \Carbon\Carbon::parse($data['date_of_birth'])->age; } catch (\Throwable $e) {}
+        }
+        // If consent checkbox checked on update, (re)stamp signed time
+        if ($request->boolean('consent_signed')) {
+            $data['consent_signed_at'] = now();
+        }
+        // Normalize health_info input if present
+        if (isset($data['health_info'])) {
+            if (is_string($data['health_info'])) {
+                $trim = trim($data['health_info']);
+                $decoded = json_decode($trim, true);
+                $data['health_info'] = json_last_error() === JSON_ERROR_NONE ? $decoded : ['notes' => $trim];
+            }
+        }
+
         $inmate->update($data);
 
         // If institution changed, close any active location assignment tied to old institution
@@ -452,16 +464,37 @@ class InmateController extends Controller
             foreach ($request->doc_names as $idx => $docName) {
                 if ($docName && isset($request->doc_files[$idx])) {
             $file = $request->doc_files[$idx];
-            $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
+            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
             $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::putFileAs($dir, $file, $name);
+            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
                     InmateDocument::create([
                         'inmate_id' => $inmate->id,
                         'document_name' => $docName,
                         'file_path' => $path,
                     ]);
+                    $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                        'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
+                    ]]));
+                    $inmate->save();
                 }
             }
+        }
+
+        // Store consent letter if provided during update
+        if ($request->hasFile('consent_letter')) {
+            $file = $request->file('consent_letter');
+            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
+            $name = \App\Support\StoragePath::uniqueName($file);
+            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
+            InmateDocument::create([
+                'inmate_id' => $inmate->id,
+                'document_name' => 'Consent Letter',
+                'file_path' => $path,
+            ]);
+            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                'field' => 'consent_letter', 'name' => 'Consent Letter', 'path' => $path, 'mime' => $file->getClientMimeType()
+            ]]));
+            $inmate->save();
         }
 
         if ($request->wantsJson()) {
