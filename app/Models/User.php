@@ -139,4 +139,20 @@ class User extends Authenticatable
         $name = urlencode($this->name ?? 'User');
         return "https://ui-avatars.com/api/?name={$name}&color=7F9CF5&background=EBF4FF";
     }
+
+    /**
+     * Check if user has a role (string compare on 'role' column).
+     */
+    public function hasRole(string $role): bool
+    {
+        return (string)$this->role === $role;
+    }
+
+    /**
+     * Check if user has any of the given roles.
+     */
+    public function hasAnyRole(array $roles): bool
+    {
+        return in_array((string)$this->role, $roles, true);
+    }
 }

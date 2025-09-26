@@ -8,7 +8,9 @@ class UpdateInmateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasRole('system_admin') ?? false;
+        $user = $this->user();
+        if(!$user) return false;
+        return $user->hasAnyRole(['system_admin','developer']);
     }
 
     public function rules(): array

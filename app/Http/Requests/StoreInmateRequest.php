@@ -8,7 +8,10 @@ class StoreInmateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasRole('system_admin') ?? false;
+        $user = $this->user();
+        if(!$user) return false;
+        // Route group already protected by role middleware; this is a secondary gate.
+        return $user->hasAnyRole(['system_admin','developer']);
     }
 
     public function rules(): array
