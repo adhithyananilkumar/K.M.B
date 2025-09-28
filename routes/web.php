@@ -46,9 +46,11 @@ use App\Http\Controllers\SystemAdmin\MedicineController as SystemAdminMedicineCo
 use App\Http\Controllers\Admin\MedicineController as AdminMedicineController;
 // use App\Http\Controllers\Developer\SettingsController as DeveloperSettingsController; // deprecated
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::view('/', 'welcome')->name('home');
+Route::view('/about', 'pages.about')->name('about');
+Route::view('/services', 'pages.services')->name('services');
+Route::view('/mission', 'pages.mission')->name('mission');
+Route::view('/contact', 'pages.contact')->name('contact');
 
 Route::get('/dashboard', [DashboardController::class,'index'])->middleware(['auth','verified'])->name('dashboard');
 
