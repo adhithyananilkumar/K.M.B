@@ -80,41 +80,57 @@ class InmateController extends Controller
             }
         }
 
-    // Admission number generation with retry on duplicate key
+    // Admission number: allow manual override if provided & valid, else generate
         if (empty($data['admitted_by'])) { $data['admitted_by'] = auth()->id(); }
         // derive age from DOB if provided
         if (!empty($data['date_of_birth'])) {
             try { $data['age'] = \Carbon\Carbon::parse($data['date_of_birth'])->age; } catch (\Throwable $e) {}
         }
-        $inmate = null; $attempts = 0;
-        do {
-            $data['admission_number'] = AdmissionNumberGenerator::generate();
-            try {
-                $inmate = Inmate::create($data);
-            } catch (\Illuminate\Database\QueryException $qe) {
-                if (str_contains(strtolower($qe->getMessage()), 'unique') && $attempts < 3) {
-                    $attempts++; continue;
-                }
-                throw $qe;
+        $manual = $request->input('admission_number');
+        if($manual){
+            // Basic format safeguard; accept if matches pattern else normalize error via validation later (skip here silently)
+            if(!preg_match('/^ADM\d{4}\d{6}$/', $manual)){
+                // If invalid pattern, ignore manual and proceed to generate
+                $manual = null;
+            } else {
+                $exists = Inmate::where('admission_number',$manual)->exists();
+                if($exists){ $manual = null; }
             }
-            break;
-        } while($attempts < 3);
+        }
+        if($manual){
+            $data['admission_number'] = $manual;
+            $inmate = Inmate::create($data);
+        } else {
+            $inmate = null; $attempts = 0;
+            do {
+                $data['admission_number'] = AdmissionNumberGenerator::generate();
+                try {
+                    $inmate = Inmate::create($data);
+                } catch (\Illuminate\Database\QueryException $qe) {
+                    if (str_contains(strtolower($qe->getMessage()), 'unique') && $attempts < 3) { $attempts++; continue; }
+                    throw $qe;
+                }
+                break;
+            } while($attempts < 3);
+        }
 
         // Store core files into final directories with unique names
         $docsMeta = [];
-        foreach ($pendingFiles as $column => $file) {
-            $dir = $column === 'photo_path'
-                ? \App\Support\StoragePath::inmatePhotoDirByAdmission($inmate->admission_number)
-                : \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
-            $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
-            $inmate->{$column} = $path;
-            $docsMeta[] = [
-                'field' => $column,
-                'original' => $file->getClientOriginalName(),
-                'path' => $path,
-                'mime' => $file->getClientMimeType(),
-            ];
+            $storageDisk = \Storage::disk(config('filesystems.default'));
+            foreach ($pendingFiles as $column => $file) {
+                // Use immutable inmate ID based directories (admission number may change; ID won't)
+                $dir = $column === 'photo_path'
+                    ? \App\Support\StoragePath::inmatePhotoDir($inmate->id)
+                    : \App\Support\StoragePath::inmateDocDir($inmate->id);
+                $name = \App\Support\StoragePath::uniqueName($file);
+                $path = $storageDisk->putFileAs($dir, $file, $name);
+                $inmate->{$column} = $path;
+                $docsMeta[] = [
+                    'field' => $column,
+                    'original' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'mime' => $file->getClientMimeType(),
+                ];
         }
         if (!empty($pendingFiles)) { $inmate->documents = array_values(array_merge($inmate->documents ?? [], $docsMeta)); $inmate->save(); }
 
@@ -163,42 +179,30 @@ class InmateController extends Controller
             }
         }
 
-    if ($request->filled('doc_names')) {
+        if ($request->filled('doc_names')) {
             foreach ($request->doc_names as $idx => $docName) {
                 if ($docName && isset($request->doc_files[$idx])) {
-            $file = $request->doc_files[$idx];
-            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
-            $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
-                    InmateDocument::create([
-                        'inmate_id' => $inmate->id,
-                        'document_name' => $docName,
-                        'file_path' => $path,
-                    ]);
-                    $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
-                        'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
-                    ]]));
-                    $inmate->save();
+                    $file = $request->doc_files[$idx];
+                    if ($file instanceof \Illuminate\Http\UploadedFile) {
+                        $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
+                        $name = \App\Support\StoragePath::uniqueName($file);
+                        $path = $storageDisk->putFileAs($dir, $file, $name);
+                        InmateDocument::create([
+                            'inmate_id' => $inmate->id,
+                            'document_name' => $docName,
+                            'file_path' => $path,
+                        ]);
+                        try {
+                            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                                'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
+                            ]]));
+                            $inmate->save();
+                        } catch (\Throwable $e) { /* ignore if column removed */ }
+                    }
                 }
             }
         }
 
-        // Store consent letter if provided (as extra document)
-        if ($request->hasFile('consent_letter')) {
-            $file = $request->file('consent_letter');
-            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
-            $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
-            InmateDocument::create([
-                'inmate_id' => $inmate->id,
-                'document_name' => 'Consent Letter',
-                'file_path' => $path,
-            ]);
-            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
-                'field' => 'consent_letter', 'name' => 'Consent Letter', 'path' => $path, 'mime' => $file->getClientMimeType()
-            ]]));
-            $inmate->save();
-        }
 
         return redirect()->route('system_admin.inmates.index')->with('success', 'Inmate created successfully.');
     }
@@ -335,10 +339,11 @@ class InmateController extends Controller
             'document_name' => 'required|string|max:255',
             'doc_file' => 'required|file|max:8192',
         ]);
-    $file = $request->file('doc_file');
-    $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
-    $name = \App\Support\StoragePath::uniqueName($file);
-    $path = \Storage::putFileAs($dir, $file, $name);
+            $storageDisk = \Storage::disk(config('filesystems.default'));
+            $file = $request->file('doc_file');
+            $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
+            $name = \App\Support\StoragePath::uniqueName($file);
+            $path = $storageDisk->putFileAs($dir, $file, $name);
         $doc = InmateDocument::create([
             'inmate_id' => $inmate->id,
             'document_name' => $data['document_name'],
@@ -381,10 +386,10 @@ class InmateController extends Controller
                 }
                 $file = $request->file($input);
                 $dir = $input === 'photo'
-                    ? \App\Support\StoragePath::inmatePhotoDirByAdmission($inmate->admission_number)
-                    : \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
+                    ? \App\Support\StoragePath::inmatePhotoDir($inmate->id)
+                    : \App\Support\StoragePath::inmateDocDir($inmate->id);
                 $name = \App\Support\StoragePath::uniqueName($file);
-                $data[$column] = \Storage::disk('public')->putFileAs($dir, $file, $name);
+                    $data[$column] = \Storage::disk(config('filesystems.default'))->putFileAs($dir, $file, $name);
                 $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
                     'field' => $column, 'original' => $file->getClientOriginalName(), 'path' => $data[$column], 'mime' => $file->getClientMimeType()
                 ]]));
@@ -460,42 +465,31 @@ class InmateController extends Controller
                 break;
         }
 
-    if ($request->filled('doc_names')) {
+        if ($request->filled('doc_names')) {
             foreach ($request->doc_names as $idx => $docName) {
                 if ($docName && isset($request->doc_files[$idx])) {
-            $file = $request->doc_files[$idx];
-            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
-            $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
-                    InmateDocument::create([
-                        'inmate_id' => $inmate->id,
-                        'document_name' => $docName,
-                        'file_path' => $path,
-                    ]);
-                    $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
-                        'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
-                    ]]));
-                    $inmate->save();
+                    $file = $request->doc_files[$idx];
+                    if ($file instanceof \Illuminate\Http\UploadedFile) {
+                        $storageDisk = \Storage::disk(config('filesystems.default'));
+                        $dir = \App\Support\StoragePath::inmateDocDir($inmate->id);
+                        $name = \App\Support\StoragePath::uniqueName($file);
+                        $path = $storageDisk->putFileAs($dir, $file, $name);
+                        InmateDocument::create([
+                            'inmate_id' => $inmate->id,
+                            'document_name' => $docName,
+                            'file_path' => $path,
+                        ]);
+                        try {
+                            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
+                                'field' => 'extra', 'name' => $docName, 'path' => $path, 'mime' => $file->getClientMimeType()
+                            ]]));
+                            $inmate->save();
+                        } catch (\Throwable $e) { /* ignore if column removed */ }
+                    }
                 }
             }
         }
 
-        // Store consent letter if provided during update
-        if ($request->hasFile('consent_letter')) {
-            $file = $request->file('consent_letter');
-            $dir = \App\Support\StoragePath::inmateDocDirByAdmission($inmate->admission_number);
-            $name = \App\Support\StoragePath::uniqueName($file);
-            $path = \Storage::disk('public')->putFileAs($dir, $file, $name);
-            InmateDocument::create([
-                'inmate_id' => $inmate->id,
-                'document_name' => 'Consent Letter',
-                'file_path' => $path,
-            ]);
-            $inmate->documents = array_values(array_merge($inmate->documents ?? [], [[
-                'field' => 'consent_letter', 'name' => 'Consent Letter', 'path' => $path, 'mime' => $file->getClientMimeType()
-            ]]));
-            $inmate->save();
-        }
 
         if ($request->wantsJson()) {
             return response()->json(['ok'=>true,'message'=>'Inmate updated successfully.']);

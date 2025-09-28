@@ -14,6 +14,35 @@
     <form action="{{ route('system_admin.inmates.update',$inmate) }}" method="POST" enctype="multipart/form-data">@csrf @method('PUT')
       <div class="row g-3 mb-3">
         <div class="col-md-3">
+          <label class="form-label">Admission #</label>
+          <input name="admission_number" class="form-control form-control-sm" value="{{ old('admission_number',$inmate->admission_number) }}" placeholder="Auto / manual">
+          <div class="form-text small">Leave blank to keep current unless changing.</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Admission Date</label>
+          <input type="date" name="admission_date" class="form-control form-control-sm" value="{{ old('admission_date',$inmate->admission_date?->format('Y-m-d')) }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Blood Group</label>
+          <select name="blood_group" class="form-select form-select-sm">
+            <option value="">—</option>
+            @foreach(['A+','A-','B+','B-','AB+','AB-','O+','O-'] as $bg)
+              <option value="{{ $bg }}" @selected(old('blood_group',$inmate->blood_group)===$bg)>{{ $bg }}</option>
+            @endforeach
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Marital Status</label>
+          <select name="marital_status" class="form-select form-select-sm">
+            <option value="">—</option>
+            @foreach(['Single','Married','Separated','Divorced','Widowed'] as $ms)
+              <option value="{{ $ms }}" @selected(old('marital_status',$inmate->marital_status)===$ms)>{{ $ms }}</option>
+            @endforeach
+          </select>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
           <label class="form-label">Institution</label>
           <select name="institution_id" class="form-select" required>
             @foreach($institutions as $inst)
@@ -45,8 +74,14 @@
         <div class="col-md-4"><label class="form-label">Gender<span class="text-danger">*</span></label><select name="gender" class="form-select" required>@foreach(['Male','Female','Other'] as $g)<option value="{{ $g }}" @selected(old('gender',$inmate->gender)===$g)>{{ $g }}</option>@endforeach</select></div>
       </div>
       <div class="row g-3 mb-3">
+        <div class="col-md-4"><label class="form-label">Father Name</label><input name="father_name" class="form-control" value="{{ old('father_name',$inmate->father_name) }}"></div>
+        <div class="col-md-4"><label class="form-label">Mother Name</label><input name="mother_name" class="form-control" value="{{ old('mother_name',$inmate->mother_name) }}"></div>
+        <div class="col-md-4"><label class="form-label">Spouse Name</label><input name="spouse_name" class="form-control" value="{{ old('spouse_name',$inmate->spouse_name) }}"></div>
+      </div>
+      <div class="row g-3 mb-3">
         <div class="col-md-4"><label class="form-label">Date of Birth<span class="text-danger">*</span></label><input type="date" name="date_of_birth" class="form-control" value="{{ old('date_of_birth',$inmate->date_of_birth?->format('Y-m-d')) }}" required></div>
-        <div class="col-md-4"><label class="form-label">Admission Date<span class="text-danger">*</span></label><input type="date" name="admission_date" class="form-control" value="{{ old('admission_date',$inmate->admission_date?->format('Y-m-d')) }}" required></div>
+        <div class="col-md-4"><label class="form-label">Height (cm)</label><input type="number" step="0.01" name="height" class="form-control" value="{{ old('height',$inmate->height) }}"></div>
+        <div class="col-md-4"><label class="form-label">Weight (kg)</label><input type="number" step="0.01" name="weight" class="form-control" value="{{ old('weight',$inmate->weight) }}"></div>
         <div class="col-md-4">
           <label class="form-label">Photo</label>
           @if($inmate->photo_path)
@@ -56,60 +91,133 @@
         </div>
       </div>
       <div class="row g-3 mb-3">
+        <div class="col-md-12">
+          <label class="form-label">Identification Marks</label>
+          <div id="editIdMarksWrapper" class="d-flex flex-column gap-2">
+            @php $marks = collect(explode('|', old('identification_marks', $inmate->identification_marks ?? '')))->filter(fn($m)=>trim($m)!==''); @endphp
+            @if($marks->isEmpty())
+              <div class="input-group input-group-sm id-mark-row"><input type="text" name="id_marks[]" class="form-control" placeholder="Scar on left arm"><button type="button" class="btn btn-outline-danger remove-id-mark d-none">&times;</button></div>
+            @else
+              @foreach($marks as $i=>$m)
+                <div class="input-group input-group-sm id-mark-row"><input type="text" name="id_marks[]" class="form-control" value="{{ $m }}"><button type="button" class="btn btn-outline-danger remove-id-mark @if($i===0) d-none @endif">&times;</button></div>
+              @endforeach
+            @endif
+          </div>
+          <div class="mt-1"><button type="button" id="editAddIdMarkBtn" class="btn btn-sm btn-outline-secondary"><span class="bi bi-plus"></span> Add Mark</button></div>
+          <input type="hidden" name="identification_marks" id="editIdentificationMarksCombined" value="{{ old('identification_marks',$inmate->identification_marks) }}">
+          <div class="form-text small">Marks saved as a list; empty rows ignored.</div>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4"><label class="form-label">Religion</label><input name="religion" class="form-control" value="{{ old('religion',$inmate->religion) }}"></div>
+        <div class="col-md-4"><label class="form-label">Caste</label><input name="caste" class="form-control" value="{{ old('caste',$inmate->caste) }}"></div>
+        <div class="col-md-4"><label class="form-label">Nationality</label><input name="nationality" class="form-control" value="{{ old('nationality',$inmate->nationality) }}"></div>
+      </div>
+      <div class="row g-3 mb-3">
+        @php $addr = is_array(old('address',$inmate->address)) ? old('address',$inmate->address) : (array)($inmate->address ?? []); @endphp
+        <div class="col-md-6"><label class="form-label">Address Line 1</label><input name="address[line1]" class="form-control" value="{{ $addr['line1'] ?? '' }}"></div>
+        <div class="col-md-6"><label class="form-label">Address Line 2</label><input name="address[line2]" class="form-control" value="{{ $addr['line2'] ?? '' }}"></div>
+        <div class="col-md-4"><label class="form-label">City</label><input name="address[city]" class="form-control" value="{{ $addr['city'] ?? '' }}"></div>
+        <div class="col-md-4"><label class="form-label">State</label><input name="address[state]" class="form-control" value="{{ $addr['state'] ?? '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Pincode</label><input name="address[pincode]" class="form-control" value="{{ $addr['pincode'] ?? '' }}"></div>
+      </div>
+      <div class="row g-3 mb-3">
+        @php $disk = Storage::disk(config('filesystems.default')); @endphp
         <div class="col-md-4">
           <label class="form-label">Aadhaar Card</label>
           @if($inmate->aadhaar_card_path)
-            @php $u = Storage::disk(config('filesystems.default')); try { $a1 = config('filesystems.default')==='s3' ? $u->temporaryUrl($inmate->aadhaar_card_path, now()->addMinutes(5)) : $u->url($inmate->aadhaar_card_path); } catch (\Throwable $e) { $a1 = null; } @endphp
-            @if($a1)<div class="mb-1"><a href="{{ $a1 }}" target="_blank">Current</a></div>@endif
+            @php try { $a1 = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->aadhaar_card_path, now()->addMinutes(5)) : $disk->url($inmate->aadhaar_card_path); } catch (\Throwable $e) { $a1 = null; } @endphp
+            @if($a1)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $a1 }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#aadhaarReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="aadhaar_card" class="form-control">
+          <div id="aadhaarReplace" class="d-none"><input type="file" name="aadhaar_card" class="form-control form-control-sm mt-1"></div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Ration Card</label>
           @if($inmate->ration_card_path)
-            @php $u = Storage::disk(config('filesystems.default')); try { $a2 = config('filesystems.default')==='s3' ? $u->temporaryUrl($inmate->ration_card_path, now()->addMinutes(5)) : $u->url($inmate->ration_card_path); } catch (\Throwable $e) { $a2 = null; } @endphp
-            @if($a2)<div class="mb-1"><a href="{{ $a2 }}" target="_blank">Current</a></div>@endif
+            @php try { $a2 = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->ration_card_path, now()->addMinutes(5)) : $disk->url($inmate->ration_card_path); } catch (\Throwable $e) { $a2 = null; } @endphp
+            @if($a2)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $a2 }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#rationReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="ration_card" class="form-control">
+          <div id="rationReplace" class="d-none"><input type="file" name="ration_card" class="form-control form-control-sm mt-1"></div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Panchayath Letter</label>
           @if($inmate->panchayath_letter_path)
-            @php $u = Storage::disk(config('filesystems.default')); try { $a3 = config('filesystems.default')==='s3' ? $u->temporaryUrl($inmate->panchayath_letter_path, now()->addMinutes(5)) : $u->url($inmate->panchayath_letter_path); } catch (\Throwable $e) { $a3 = null; } @endphp
-            @if($a3)<div class="mb-1"><a href="{{ $a3 }}" target="_blank">Current</a></div>@endif
+            @php try { $a3 = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->panchayath_letter_path, now()->addMinutes(5)) : $disk->url($inmate->panchayath_letter_path); } catch (\Throwable $e) { $a3 = null; } @endphp
+            @if($a3)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $a3 }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#panchReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="panchayath_letter" class="form-control">
+          <div id="panchReplace" class="d-none"><input type="file" name="panchayath_letter" class="form-control form-control-sm mt-1"></div>
         </div>
+      </div>
+      <hr class="my-3">
+      <h6>Health & Additional</h6>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6"><label class="form-label">Health Info (JSON or notes)</label><textarea name="health_info" rows="4" class="form-control">{{ old('health_info', is_array($inmate->health_info)? json_encode($inmate->health_info, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES): (is_string($inmate->health_info)? $inmate->health_info : '')) }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Critical Alert</label><textarea name="critical_alert" rows="4" class="form-control">{{ old('critical_alert',$inmate->critical_alert) }}</textarea><div class="form-text small">Visible as red alert on profile.</div></div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6"><label class="form-label">Education Details (JSON or text)</label><textarea name="education_details" rows="3" class="form-control">{{ old('education_details', is_array($inmate->education_details)? json_encode($inmate->education_details, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES): ($inmate->education_details ?? '')) }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Case Notes</label><textarea name="case_notes" rows="3" class="form-control">{{ old('case_notes',$inmate->case_notes) }}</textarea></div>
       </div>
       <div class="row g-3 mb-3">
         <div class="col-md-4">
           <label class="form-label">Disability Card</label>
           @if($inmate->disability_card_path)
-            @php $d = Storage::disk(config('filesystems.default')); try { $u = config('filesystems.default')==='s3' ? $d->temporaryUrl($inmate->disability_card_path, now()->addMinutes(5)) : $d->url($inmate->disability_card_path); } catch (\Throwable $e) { $u = null; } @endphp
-            @if($u)<div class="mb-1"><a href="{{ $u }}" target="_blank">Current</a></div>@endif
+            @php try { $u = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->disability_card_path, now()->addMinutes(5)) : $disk->url($inmate->disability_card_path); } catch (\Throwable $e) { $u = null; } @endphp
+            @if($u)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $u }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#disabilityReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="disability_card" class="form-control">
+          <div id="disabilityReplace" class="d-none"><input type="file" name="disability_card" class="form-control form-control-sm mt-1"></div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Doctor Certificate</label>
           @if($inmate->doctor_certificate_path)
-            @php $d = Storage::disk(config('filesystems.default')); try { $u = config('filesystems.default')==='s3' ? $d->temporaryUrl($inmate->doctor_certificate_path, now()->addMinutes(5)) : $d->url($inmate->doctor_certificate_path); } catch (\Throwable $e) { $u = null; } @endphp
-            @if($u)<div class="mb-1"><a href="{{ $u }}" target="_blank">Current</a></div>@endif
+            @php try { $u = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->doctor_certificate_path, now()->addMinutes(5)) : $disk->url($inmate->doctor_certificate_path); } catch (\Throwable $e) { $u = null; } @endphp
+            @if($u)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $u }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#doctorCertReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="doctor_certificate" class="form-control">
+          <div id="doctorCertReplace" class="d-none"><input type="file" name="doctor_certificate" class="form-control form-control-sm mt-1"></div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Vincent Depaul Card</label>
           @if($inmate->vincent_depaul_card_path)
-            @php $d = Storage::disk(config('filesystems.default')); try { $u = config('filesystems.default')==='s3' ? $d->temporaryUrl($inmate->vincent_depaul_card_path, now()->addMinutes(5)) : $d->url($inmate->vincent_depaul_card_path); } catch (\Throwable $e) { $u = null; } @endphp
-            @if($u)<div class="mb-1"><a href="{{ $u }}" target="_blank">Current</a></div>@endif
+            @php try { $u = config('filesystems.default')==='s3' ? $disk->temporaryUrl($inmate->vincent_depaul_card_path, now()->addMinutes(5)) : $disk->url($inmate->vincent_depaul_card_path); } catch (\Throwable $e) { $u = null; } @endphp
+            @if($u)
+              <div class="border rounded p-2 small mb-1 bg-light d-flex justify-content-between align-items-center">
+                <a href="{{ $u }}" target="_blank" class="text-decoration-none">View Current</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary toggle-replace" data-target="#vincentReplace">Replace</button>
+              </div>
+            @endif
           @endif
-          <input type="file" name="vincent_depaul_card" class="form-control">
+          <div id="vincentReplace" class="d-none"><input type="file" name="vincent_depaul_card" class="form-control form-control-sm mt-1"></div>
         </div>
       </div>
       <hr class="my-3">
       <h6>Guardian</h6>
       <div class="row g-3 mb-3">
+        <div class="col-md-3"><label class="form-label">Guardian Name</label><input name="guardian_name" class="form-control" value="{{ old('guardian_name',$inmate->guardian_name) }}"></div>
         <div class="col-md-3"><label class="form-label">Relation</label><input name="guardian_relation" class="form-control" value="{{ old('guardian_relation',$inmate->guardian_relation) }}"></div>
         <div class="col-md-3"><label class="form-label">First Name</label><input name="guardian_first_name" class="form-control" value="{{ old('guardian_first_name',$inmate->guardian_first_name) }}"></div>
         <div class="col-md-3"><label class="form-label">Last Name</label><input name="guardian_last_name" class="form-control" value="{{ old('guardian_last_name',$inmate->guardian_last_name) }}"></div>
@@ -171,6 +279,28 @@
     const btn=document.getElementById('add-document-btn'); const wrapper=document.getElementById('extra-documents-wrapper'); let i=0;
     btn?.addEventListener('click',()=>{ const row=document.createElement('div'); row.className='row g-2 align-items-end mb-2'; row.innerHTML=`<div class="col-md-5"><label class="form-label small">Document Name</label><input type="text" name="doc_names[${i}]" class="form-control"></div><div class="col-md-5"><label class="form-label small">File</label><input type="file" name="doc_files[${i}]" class="form-control"></div><div class="col-md-2 d-grid"><button type="button" class="btn btn-outline-danger btn-sm remove-doc">Remove</button></div>`; wrapper.appendChild(row); i++; });
     wrapper?.addEventListener('click',e=>{ if(e.target.classList.contains('remove-doc')) e.target.closest('.row').remove(); });
+
+    // identification marks repeater
+    const idWrap = document.getElementById('editIdMarksWrapper');
+    const addBtn = document.getElementById('editAddIdMarkBtn');
+    const hiddenCombined = document.getElementById('editIdentificationMarksCombined');
+    function syncMarks(){
+      const vals=[...idWrap.querySelectorAll('input[name="id_marks[]"]')] .map(i=>i.value.trim()).filter(v=>v!=='');
+      hiddenCombined.value = vals.join('|');
+      idWrap.querySelectorAll('.id-mark-row').forEach((row,idx)=>{ const rm=row.querySelector('.remove-id-mark'); if(rm){ rm.classList.toggle('d-none', idx===0); } });
+    }
+    addBtn?.addEventListener('click',()=>{ const row=document.createElement('div'); row.className='input-group input-group-sm id-mark-row mt-1'; row.innerHTML='<input type="text" name="id_marks[]" class="form-control" placeholder="Mark"><button type="button" class="btn btn-outline-danger remove-id-mark">&times;</button>'; idWrap.appendChild(row); syncMarks(); });
+    idWrap?.addEventListener('click',e=>{ if(e.target.classList.contains('remove-id-mark')){ e.target.closest('.id-mark-row')?.remove(); syncMarks(); } });
+    idWrap?.addEventListener('input', syncMarks);
+    syncMarks();
+
+    // toggle replace buttons for core docs
+    document.querySelectorAll('.toggle-replace').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const target = document.querySelector(btn.dataset.target);
+        if(target){ target.classList.toggle('d-none'); }
+      });
+    });
 
     // room picker
   const list=document.getElementById('editRoomsList'); const q=document.getElementById('editRoomSearch'); const reload=document.getElementById('editRoomReload'); const showOcc=document.getElementById('editRoomShowOcc'); const out=document.getElementById('editRoomSelected'); const hid=document.getElementById('editRoomLocationId'); const btnUpdate=document.getElementById('editRoomUpdate'); let rooms=[];

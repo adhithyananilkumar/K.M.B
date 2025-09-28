@@ -73,12 +73,12 @@
     </head>
     <body class="font-sans antialiased bg-light" @auth data-auth="{{ auth()->id() }}" @endauth>
     <div class="d-flex min-vh-100">
-        <!-- Desktop Sidebar -->
-        <div class="d-none d-lg-block" style="width:260px;">
+        <!-- Desktop Sidebar (locked/fixed) -->
+        <div class="d-none d-lg-block position-fixed h-100" style="width:260px; left:0; top:0; z-index:1030;">
             @include('layouts.partials.sidebar')
         </div>
-        <!-- Mobile Offcanvas Trigger / Top Bar -->
-        <div class="flex-grow-1 d-flex flex-column">
+        <!-- Content wrapper adds left margin to avoid overlap -->
+        <div class="flex-grow-1 d-flex flex-column" style="margin-left:0; margin-left:260px;">
             <nav class="navbar navbar-light bg-white border-bottom sticky-top d-lg-none">
                 <div class="container-fluid">
                     <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar"><span class="bi bi-list"></span></button>

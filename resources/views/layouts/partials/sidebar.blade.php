@@ -1,4 +1,4 @@
-<aside class="aw-sidebar d-flex flex-column h-100 text-white">
+<aside class="aw-sidebar d-flex flex-column h-100 text-white position-relative" style="overflow:auto;">
     <style>
     .aw-sidebar{--aw-bg:#0f4f4b; --aw-bg-2:#0c4340; --aw-accent:#0EA5A1; background:var(--aw-bg); width:252px; min-width:252px}
         .aw-brand{height:28px;width:auto}

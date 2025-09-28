@@ -17,6 +17,8 @@ class StoreInmateRequest extends FormRequest
     public function rules(): array
     {
         $rules = [
+            // Allow either legacy pattern ADMYYYY###### or a plain integer (1-20 digits)
+            'admission_number' => ['nullable','regex:/^(ADM\d{10}|\d{1,20})$/','unique:inmates,admission_number'],
             'admission_date' => ['required','date'],
             'institution_id' => ['required','exists:institutions,id'],
             'type' => ['required','in:child,elderly,mental_health,rehabilitation'],
@@ -54,7 +56,6 @@ class StoreInmateRequest extends FormRequest
             'disability_card' => ['nullable','file','mimes:pdf,jpg,jpeg,png','max:5120'],
             'doctor_certificate' => ['nullable','file','mimes:pdf,jpg,jpeg,png','max:5120'],
             'vincent_depaul_card' => ['nullable','file','mimes:pdf,jpg,jpeg,png','max:5120'],
-            'consent_letter' => ['nullable','file','mimes:pdf,jpg,jpeg,png','max:5120'],
             'doc_names.*' => ['nullable','string','max:255'],
             'doc_files.*' => ['nullable','file','max:8192'],
             'location_id' => ['nullable','exists:locations,id'],

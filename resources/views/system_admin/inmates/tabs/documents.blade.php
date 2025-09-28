@@ -32,35 +32,66 @@
         ]; @endphp
         @foreach($core as $k=>[$label,$path])
           @if(!empty($path))
-            <div class="col-12">
-              @php $purl = config('filesystems.default')==='s3' ? $disk->temporaryUrl($path, now()->addMinutes(5)) : $disk->url($path); @endphp
-              <div class="d-flex align-items-center justify-content-between border rounded p-2 doc-row clickable" data-doc-url="{{ $purl }}">
-                <div class="fw-semibold">{{ $label }}</div>
-                <span class="bi bi-box-arrow-up-right text-muted"></span>
+            @php 
+              $purl = config('filesystems.default')==='s3' ? $disk->temporaryUrl($path, now()->addMinutes(5)) : $disk->url($path);
+              $ext = pathinfo($path, PATHINFO_EXTENSION);
+              $icon = in_array(strtolower($ext),['jpg','jpeg','png','gif','webp']) ? 'bi-image' : (strtolower($ext)==='pdf' ? 'bi-file-pdf' : 'bi-file-earmark');
+            @endphp
+            <div class="col-12 col-md-6 col-lg-4">
+              <div class="border rounded p-2 h-100 d-flex flex-column justify-content-between doc-row clickable" data-doc-url="{{ $purl }}">
+                <div class="d-flex align-items-start gap-2">
+                  <span class="bi {{ $icon }} text-primary fs-5"></span>
+                  <div class="small">
+                    <div class="fw-semibold">{{ $label }}</div>
+                    <div class="text-muted text-truncate" style="max-width:160px;">{{ $ext ?: 'file' }}</div>
+                  </div>
+                </div>
+                <div class="text-end"><span class="badge bg-light text-dark">Core</span></div>
               </div>
             </div>
           @endif
         @endforeach
 
         <div class="col-12">
-          <div class="border rounded">
-            <div class="p-2 fw-semibold">Extra Documents</div>
+          <div class="border rounded p-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-semibold">Extra Documents</div>
+              <div class="small text-muted">Latest first</div>
+            </div>
             @php $docs = $inmate->documents()->latest()->get(); @endphp
             @if($docs->isEmpty())
               <div class="text-muted p-2">No extra documents.</div>
             @else
-              <div class="list-group list-group-flush">
+              <div class="row g-2">
                 @foreach($docs as $d)
-                  <div class="list-group-item d-flex justify-content-between align-items-center">
-                    @php $durl = config('filesystems.default')==='s3' ? $disk->temporaryUrl($d->file_path, now()->addMinutes(5)) : $disk->url($d->file_path); @endphp
-                    <a class="text-decoration-none d-flex align-items-center gap-2" href="{{ $durl }}" target="_blank">
-                      <span class="bi bi-file-earmark-text text-muted"></span>{{ $d->document_name }}
-                    </a>
-                    <form method="POST" action="{{ route('system_admin.inmates.documents.toggle-share', [$inmate, $d]) }}" class="d-inline">@csrf
-                      <button type="submit" class="btn btn-sm {{ $d->is_sharable_with_guardian ? 'btn-success' : 'btn-outline-secondary' }}">
-                        <span class="bi bi-share me-1"></span>{{ $d->is_sharable_with_guardian ? 'Shared with Guardian' : 'Share with Guardian' }}
-                      </button>
-                    </form>
+                  @php 
+                    $durl = config('filesystems.default')==='s3' ? $disk->temporaryUrl($d->file_path, now()->addMinutes(5)) : $disk->url($d->file_path);
+                    $ext = strtolower(pathinfo($d->file_path, PATHINFO_EXTENSION));
+                    $isImg = in_array($ext,['jpg','jpeg','png','gif','webp']);
+                    $icon = $isImg ? 'bi-image' : ($ext==='pdf' ? 'bi-filetype-pdf' : 'bi-file-earmark');
+                  @endphp
+                  <div class="col-12 col-md-6 col-lg-4">
+                    <div class="border rounded p-2 h-100 d-flex flex-column gap-2 doc-row clickable" data-doc-url="{{ $durl }}" data-doc-name="{{ $d->document_name }}">
+                      <div class="d-flex align-items-start gap-2">
+                        <span class="bi {{ $icon }} text-secondary fs-5"></span>
+                        <div class="small flex-grow-1">
+                          <div class="fw-semibold text-truncate" title="{{ $d->document_name }}">{{ $d->document_name }}</div>
+                          <div class="text-muted text-uppercase small">{{ $ext ?: 'FILE' }}</div>
+                        </div>
+                        <form method="POST" action="{{ route('system_admin.inmates.documents.toggle-share', [$inmate, $d]) }}" class="ms-auto d-inline">@csrf
+                          <button type="submit" class="btn btn-outline-secondary btn-sm" title="Toggle share">
+                            <span class="bi bi-share{{ $d->is_sharable_with_guardian ? '-fill text-success' : '' }}"></span>
+                          </button>
+                        </form>
+                      </div>
+                      @if($isImg)
+                        <div class="ratio ratio-16x9 rounded overflow-hidden border bg-light">
+                          <img src="{{ $durl }}" alt="{{ $d->document_name }}" style="object-fit:cover;">
+                        </div>
+                      @else
+                        <div class="small text-muted">Open to preview</div>
+                      @endif
+                    </div>
                   </div>
                 @endforeach
               </div>
@@ -131,3 +162,62 @@
     </div>
   </div>
 </div>
+
+<!-- Modal for doc preview -->
+<div class="modal fade" id="docPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="docPreviewTitle">Document</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-2" id="docPreviewBody" style="min-height:60vh; display:flex;align-items:center;justify-content:center;">
+        <div class="text-muted">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Enhance doc preview (only once per page load)
+  const container = document.getElementById('inmateTabContent');
+  const observer = new MutationObserver(()=> attachHandlers());
+  observer.observe(container, {childList:true, subtree:true});
+  function attachHandlers(){
+    const modalEl = document.getElementById('docPreviewModal');
+    if(!modalEl) return;
+    const rows = container.querySelectorAll('.doc-row.clickable:not([data-preview-bound])');
+    rows.forEach(r=>{
+      r.dataset.previewBound='1';
+      r.addEventListener('click', (e)=>{
+        const url = r.getAttribute('data-doc-url');
+        if(!url) return;
+        const name = r.getAttribute('data-doc-name') || 'Document';
+        const body = document.getElementById('docPreviewBody');
+        const title = document.getElementById('docPreviewTitle');
+        if(body){ body.innerHTML = '<div class="text-muted">Loading preview...</div>'; }
+        if(title){ title.textContent = name; }
+        const ext = (url.split('?')[0].split('.').pop()||'').toLowerCase();
+        let content='';
+        if(['jpg','jpeg','png','gif','webp'].includes(ext)){
+          content = `<img src="${url}" alt="${name}" style="max-width:100%;max-height:75vh;object-fit:contain;" />`;
+        } else if(ext==='pdf') {
+          content = `<iframe src="${url}" style="width:100%;height:75vh;border:0;" title="${name}"></iframe>`;
+        } else {
+          content = `<div class='text-center p-3 small'><a href='${url}' target='_blank' rel='noopener'>Open File</a></div>`;
+        }
+        if(body){ body.innerHTML = content; }
+        if(typeof bootstrap !== 'undefined'){
+          const m = bootstrap.Modal.getOrCreateInstance(modalEl); m.show();
+        } else {
+          window.open(url,'_blank');
+        }
+      });
+    });
+  }
+  attachHandlers();
+});
+</script>
+@endpush

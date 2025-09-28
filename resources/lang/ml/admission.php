@@ -44,6 +44,7 @@ return [
     'guardian_email' => 'Email / ഇമെയിൽ',
     'guardian_address' => 'Address / വിലാസം',
     'documents' => 'Documents / രേഖകൾ',
+    'additional_documents' => 'Additional Documents / അധിക രേഖകൾ',
     'photo' => 'Photo / ഫോട്ടോ',
     'aadhaar' => 'Aadhaar Card / ആധാർ കാർഡ്',
     'ration_card' => 'Ration Card / റേഷൻ കാർഡ്',

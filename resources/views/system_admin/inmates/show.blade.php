@@ -12,16 +12,17 @@
 	@endif
 
 	<div class="card shadow-sm mb-3">
-			<div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+		<div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
 			<div class="d-flex align-items-center gap-3">
 				<img src="{{ $inmate->avatar_url }}" class="rounded-circle" style="width:56px;height:56px;object-fit:cover;" alt="avatar">
 				<div>
-					<div class="h5 mb-0">{{ $inmate->full_name }}</div>
-						<div class="text-muted small">Reg #: {{ $inmate->registration_number ?: '—' }} · {{ $inmate->institution?->name ?: '—' }}</div>
-						<div class="small mt-1">
-							<span class="text-muted">Allocation:</span>
-							<span class="fw-semibold">{{ optional($inmate->currentLocation?->location)->name ?? 'Not assigned' }}</span>
-						</div>
+					<div class="h5 mb-1">{{ $inmate->full_name }}</div>
+					<div class="text-muted small">Admission #: <strong>{{ $inmate->admission_number }}</strong> · Reg #: {{ $inmate->registration_number ?: '—' }}</div>
+					<div class="text-muted small">Institution: {{ $inmate->institution?->name ?: '—' }} · Type: {{ ucfirst(str_replace('_',' ',$inmate->type)) ?: '—' }}</div>
+					<div class="small mt-1">
+						<span class="text-muted">Allocation:</span>
+						<span class="fw-semibold">{{ optional($inmate->currentLocation?->location)->name ?? 'Not assigned' }}</span>
+					</div>
 				</div>
 			</div>
 			<div class="d-flex flex-wrap gap-2">
